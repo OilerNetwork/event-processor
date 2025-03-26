@@ -1,8 +1,6 @@
 package models
 
-import (
-	"github.com/lib/pq"
-)
+import "github.com/lib/pq"
 
 type Event struct {
 	From            string         `json:"from"`
