@@ -161,7 +161,16 @@ func (db *DB) GetEventsForVault(vaultAddress string, startBlockHash string, endB
 	return events, nil
 }
 
+func (db *DB) Shutdown() {
+	db.Pool.Close()
+	db.tx.Rollback(context.Background())
+	db.tx.Conn().Close(context.Background())
+	db.Conn.Close(context.Background())
+}
+
 func (db *DB) GetEventsByBlockHash(blockHash string, orderBy string) ([]models.Event, error) {
+
+
 	query := `
 		SELECT 
 			from,
