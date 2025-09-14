@@ -5,14 +5,21 @@ import (
 )
 
 func (db *DB) CatchupDriverEvents() error {
-	events, err := db.GetUnprocessedDriverEvents()
-	if err != nil {
-		return err
-	}
-	for _, event := range events {
-		err := db.processDriverEvent(event)
+
+	//Loop infinitely until no catchup events found
+	for {
+		events, err := db.GetUnprocessedDriverEvents()
 		if err != nil {
 			return err
+		}
+		if events == nil {
+			break
+		}
+		for _, event := range events {
+			err := db.processDriverEvent(event)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -79,6 +79,9 @@ func (db *DB) GetUnprocessedDriverEvents() ([]models.DriverEvent, error) {
 			SELECT * FROM driver_events WHERE is_processed = false;`
 	rows, err := db.tx.Query(context.Background(), query)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to query unprocessed driver events: %w", err)
 	}
 	defer rows.Close()

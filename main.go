@@ -30,6 +30,7 @@ func run() error {
 
 	db := &db.DB{}
 	db.Init()
+	db.CatchupDriverEvents()
 	db.Listener()
 	return nil
 }
