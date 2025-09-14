@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -219,6 +220,8 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 		From            string         `json:"from"`
 		TransactionHash string         `json:"transaction_hash"`
 		BlockNumber     uint64         `json:"block_number"`
+		BlockHash       string         `json:"block_hash"`
+		EventNonce      uint64         `json:"event_nonce"`
 		VaultAddress    string         `json:"vault_address"`
 		Timestamp       uint64         `json:"timestamp"`
 		EventName       string         `json:"event_name"`
@@ -237,9 +240,68 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 	e.BlockNumber = aux.BlockNumber
 	e.VaultAddress = aux.VaultAddress
 	e.Timestamp = aux.Timestamp
+	e.EventNonce = aux.EventNonce
+	e.BlockHash = aux.BlockHash
 	e.EventName = aux.EventName
 	e.EventKeys = aux.EventKeys
 	e.EventData = aux.EventData
+
+	return nil
+}
+func (sb *StarknetBlock) UnmarshalJSON(data []byte) error {
+	// Auxiliary struct to map JSON keys
+	aux := struct {
+		BlockNumber uint64 `json:"block_number"`
+		Timestamp   uint64 `json:"timestamp"`
+		BlockHash   string `json:"block_hash"`
+		ParentHash  string `json:"parent_hash"`
+		Status      string `json:"status"`
+	}{}
+
+	// Unmarshal into the auxiliary struct
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Copy data from aux to the original struct
+	sb.BlockNumber = aux.BlockNumber
+	sb.Timestamp = aux.Timestamp
+	sb.BlockHash = aux.BlockHash
+	sb.ParentHash = aux.ParentHash
+	sb.Status = aux.Status
+
+	return nil
+}
+
+func (de *DriverEvent) UnmarshalJSON(data []byte) error {
+	// Auxiliary struct to map JSON keys
+	aux := struct {
+		ID             int       `json:"id"`
+		SequenceIndex  int64     `json:"sequence_index"`
+		Type           string    `json:"type"`
+		Timestamp      time.Time `json:"timestamp"`
+		IsProcessed    bool      `json:"is_processed"`
+		BlockHash      string    `json:"block_hash"`
+		StartBlockHash string    `json:"start_block_hash"`
+		EndBlockHash   string    `json:"end_block_hash"`
+		VaultAddress   string    `json:"vault_address"`
+	}{}
+
+	// Unmarshal into the auxiliary struct
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Copy data from aux to the original struct
+	de.ID = aux.ID
+	de.SequenceIndex = aux.SequenceIndex
+	de.Type = aux.Type
+	de.Timestamp = aux.Timestamp
+	de.IsProcessed = aux.IsProcessed
+	de.BlockHash = aux.BlockHash
+	de.StartBlockHash = aux.StartBlockHash
+	de.EndBlockHash = aux.EndBlockHash
+	de.VaultAddress = aux.VaultAddress
 
 	return nil
 }

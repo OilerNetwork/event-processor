@@ -1,16 +1,19 @@
 package models
 
 import (
+	"time"
+
 	"github.com/lib/pq"
 )
 
 type Event struct {
 	From            string         `json:"from"`
-	ID              uint           `json:"id"`
 	TransactionHash string         `json:"transactionHash"`
 	BlockNumber     uint64         `json:"blockNumber"`
 	VaultAddress    string         `json:"vaultAddress"`
 	Timestamp       uint64         `json:"timestamp"`
+	EventNonce      uint64         `json:"eventNonce"`
+	BlockHash       string         `json:"blockHash"`
 	EventName       string         `json:"eventName"`
 	EventKeys       pq.StringArray `json:"eventKeys"`
 	EventData       pq.StringArray `json:"eventData"`
@@ -107,4 +110,24 @@ type Bid struct {
 	TreeNonce    uint64 `json:"treeNonce"`
 	Amount       BigInt `json:"amount"`
 	Price        BigInt `json:"price"`
+}
+
+type StarknetBlock struct {
+	BlockNumber uint64 `json:"block_number"`
+	Timestamp   uint64 `json:"timestamp"`
+	BlockHash   string `json:"block_hash"`
+	ParentHash  string `json:"parent_hash"`
+	Status      string `json:"status"`
+}
+
+type DriverEvent struct {
+	ID             int       `json:"id"`
+	SequenceIndex  int64     `json:"sequence_index"`
+	Type           string    `json:"type"`
+	Timestamp      time.Time `json:"timestamp"`
+	IsProcessed    bool      `json:"is_processed"`
+	BlockHash      string    `json:"block_hash"`
+	StartBlockHash string    `json:"start_block_hash"`
+	EndBlockHash   string    `json:"end_block_hash"`
+	VaultAddress   string    `json:"vault_address"`
 }
