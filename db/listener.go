@@ -10,17 +10,8 @@ import (
 	"math/big"
 )
 
-type blockEventData struct {
-	BlockNumber uint64 `json:"blockNumber"`
-}
-
 func (db *DB) Listener() {
-	_, err := db.Conn.Exec(db.ctx, "LISTEN new_event")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Conn.Exec(db.ctx, "LISTEN revert_block")
+	_, err := db.Conn.Exec(db.ctx, "LISTEN driver_events")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,59 +24,23 @@ func (db *DB) Listener() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		//Process notification here
-		switch notification.Channel {
-		case "new_block":
-			fmt.Println("Received an update on new_block")
-			// Parse the JSON payload
-			var updatedData blockEventData
-			err := json.Unmarshal([]byte(notification.Payload), &updatedData)
-			if err != nil {
-				log.Printf("Error parsing or_update payload: %v", err)
-				return
-			}
-			events, err := db.GetEventsByBlockNumber(updatedData.BlockNumber)
-			if err != nil {
-				log.Printf("Error getting events by block number: %v", err)
-				return
-			}
-			db.BeginTx()
-			for _, event := range events {
-				err := db.processVaultEvent(event)
-				if err != nil {
-					db.RollbackTx()
-					log.Printf("Error processing event: %v", err)
-					return
-				}
-			}
-			db.CommitTx()
-		case "revert_block":
-			fmt.Println("Received an update on revert_block")
-			// Parse the JSON payload
-			var updatedData blockEventData
-			err := json.Unmarshal([]byte(notification.Payload), &updatedData)
-			if err != nil {
-				log.Printf("Error parsing revert_block payload: %v", err)
-				return
-			}
-			events, err := db.GetEventsByBlockNumber(updatedData.BlockNumber)
-			if err != nil {
-				log.Printf("Error getting events by block number: %v", err)
-				return
-			}
-			db.BeginTx()
-			for _, event := range events {
-				err := db.revertVaultEvent(event)
-				if err != nil {
-					db.RollbackTx()
-					log.Printf("Error reverting event: %v", err)
-					return
-				}
-			}
-			db.CommitTx()
+
+		var driverEventData models.DriverEvent
+		err = json.Unmarshal([]byte(notification.Payload), &driverEventData)
+		if err != nil {
+			log.Printf("Error parsing driver_events payload: %v", err)
+			return
 		}
+		fmt.Println("Received an update on driver_events")
+		err = db.processDriverEvent(driverEventData)
+		if err != nil {
+			log.Printf("Error processing driver_events: %v", err)
+			return
+		}
+		//Process notification here
 	}
 }
+
 func (db *DB) revertVaultEvent(
 	event models.Event,
 ) error {
@@ -130,6 +85,9 @@ func (db *DB) revertVaultEvent(
 			return err
 		}
 		err = db.AuctionStartedRevert(prevStateOptionRound.VaultAddress, roundAddress, event.BlockNumber)
+		if err != nil {
+			return err
+		}
 	case "AuctionEnded":
 		_, _, _, _, _, roundAddress := adaptors.AuctionEnded(junoEvent)
 		prevStateOptionRound, err := db.GetOptionRoundByAddress(roundAddress)
@@ -137,7 +95,9 @@ func (db *DB) revertVaultEvent(
 			return err
 		}
 		err = db.AuctionEndedRevert(prevStateOptionRound.VaultAddress, roundAddress, event.BlockNumber)
-
+		if err != nil {
+			return err
+		}
 	case "OptionRoundSettled":
 		_, _, roundAddress := adaptors.OptionRoundSettled(junoEvent)
 		prevStateOptionRound, err := db.GetOptionRoundByAddress(roundAddress)
@@ -145,6 +105,9 @@ func (db *DB) revertVaultEvent(
 			return err
 		}
 		err = db.RoundSettledRevert(prevStateOptionRound.VaultAddress, roundAddress, event.BlockNumber)
+		if err != nil {
+			return err
+		}
 	case "BidPlaced":
 		bid, _ := adaptors.BidPlaced(junoEvent)
 		err = db.BidPlacedRevert(bid.BidID, bid.RoundAddress)

@@ -15,10 +15,11 @@ import (
 )
 
 type DB struct {
-	Pool *pgxpool.Pool
-	Conn *pgx.Conn
-	tx   pgx.Tx
-	ctx  context.Context
+	Pool   *pgxpool.Pool
+	Conn   *pgx.Conn
+	tx     pgx.Tx
+	ctx    context.Context
+	logger *log.Logger
 }
 
 func (db *DB) BeginTx() {
@@ -42,6 +43,8 @@ func (db *DB) RollbackTx() {
 }
 
 func (db *DB) Init() error {
+
+	db.logger = log.New(os.Stdout, "", log.LstdFlags)
 	connStr := os.Getenv("DB_URL")
 	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
@@ -63,17 +66,61 @@ func (db *DB) Init() error {
 	return nil
 }
 
-func (db *DB) Shutdown() {
-	db.Pool.Close()
-	db.tx.Rollback(context.Background())
-	db.tx.Conn().Close(context.Background())
-	db.Conn.Close(context.Background())
+func (db *DB) MarkDriverEventAsProcessed(id int) error {
+	query := `UPDATE driver_events SET is_processed = true WHERE id = $1;`
+	_, err := db.tx.Exec(context.Background(), query, id)
+	if err != nil {
+		return fmt.Errorf("failed to mark driver event as processed: %w", err)
+	}
+	return nil
+}
+func (db *DB) GetUnprocessedDriverEvents() ([]models.DriverEvent, error) {
+	query := `
+			SELECT * FROM driver_events WHERE is_processed = false;`
+	rows, err := db.tx.Query(context.Background(), query)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query unprocessed driver events: %w", err)
+	}
+	defer rows.Close()
+	var events []models.DriverEvent
+	for rows.Next() {
+		var event models.DriverEvent
+		if err := rows.Scan(&event); err != nil {
+			return nil, fmt.Errorf("failed to scan driver event: %w", err)
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating driver event rows: %w", err)
+	}
+	return events, nil
 }
 
-func (db *DB) GetEventsByBlockNumber(blockNumber uint64) ([]models.Event, error) {
+func (db *DB) GetBlockByHash(blockHash string) (*models.StarknetBlock, error) {
+	query := `SELECT * FROM starknet_blocks WHERE block_hash = $1;`
+	var block models.StarknetBlock
+	db.tx.QueryRow(context.Background(), query, blockHash).Scan(&block)
+	return &block, nil
+}
+
+func (db *DB) GetEventsForVault(vaultAddress string, startBlockHash string, endBlockHash string) ([]models.Event, error) {
+
+	startBlock, err := db.GetBlockByHash(startBlockHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get start block: %w", err)
+	}
+	endBlock, err := db.GetBlockByHash(endBlockHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get end block: %w", err)
+	}
 	query := `
 		SELECT 
-			id,
+			from,
+			event_nonce,
+			block_hash,
 			transaction_hash,
 			block_number,
 			vault_address,
@@ -82,10 +129,65 @@ func (db *DB) GetEventsByBlockNumber(blockNumber uint64) ([]models.Event, error)
 			event_keys,
 			event_data
 		FROM events
-		WHERE block_number = $1
-		ORDER BY id ASC;`
+		WHERE vault_address = $1 AND block_number BETWEEN $2 AND $3;` //Including start and end block
 
-	rows, err := db.tx.Query(context.Background(), query, blockNumber)
+	rows, err := db.tx.Query(context.Background(), query, vaultAddress, startBlock.BlockNumber, endBlock.BlockNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query events for vault: %w", err)
+	}
+	defer rows.Close()
+	var events []models.Event
+	for rows.Next() {
+		var event models.Event
+		if err := rows.Scan(
+			&event.From,
+			&event.EventNonce,
+			&event.BlockHash,
+			&event.TransactionHash,
+			&event.BlockNumber,
+			&event.VaultAddress,
+			&event.Timestamp,
+			&event.EventName,
+			&event.EventKeys,
+			&event.EventData,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan event: %w", err)
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating event rows: %w", err)
+	}
+	return events, nil
+}
+
+func (db *DB) Shutdown() {
+	db.Pool.Close()
+	db.tx.Rollback(context.Background())
+	db.tx.Conn().Close(context.Background())
+	db.Conn.Close(context.Background())
+}
+
+func (db *DB) GetEventsByBlockHash(blockHash string, orderBy string) ([]models.Event, error) {
+
+
+	query := `
+		SELECT 
+			from,
+			event_nonce,
+			block_hash,
+			transaction_hash,
+			block_number,
+			vault_address,
+			timestamp,
+			event_name,
+			event_keys,
+			event_data
+		FROM events
+		WHERE block_hash = $1
+		ORDER BY event_nonce $2 ASC;`
+
+	rows, err := db.tx.Query(context.Background(), query, blockHash, orderBy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query events by block number: %w", err)
 	}
@@ -95,7 +197,8 @@ func (db *DB) GetEventsByBlockNumber(blockNumber uint64) ([]models.Event, error)
 	for rows.Next() {
 		var event models.Event
 		if err := rows.Scan(
-			&event.ID,
+			&event.EventNonce,
+			&event.BlockHash,
 			&event.TransactionHash,
 			&event.BlockNumber,
 			&event.VaultAddress,
